@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>High-Impact Tower Defense</title>
+    <style>
+        body { margin: 0; background: #0a0a0c; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; user-select: none; display: flex; }
+        canvas { display: block; background: #0a0a0c; cursor: crosshair; }
+        #ui-top { position: absolute; top: 10px; left: 10px; display: flex; gap: 10px; pointer-events: none; z-index: 10; }
+        .stat-box { background: rgba(0,0,0,0.8); padding: 8px 12px; border-radius: 8px; border: 1px solid #444; font-weight: bold; font-size: 14px; box-shadow: 0 0 10px rgba(0, 255, 204, 0.2); backdrop-filter: blur(5px); }
+        
+        #shop-container { 
+            width: 120px; 
+            height: 100vh; 
+            background: #222; 
+            border-left: 3px solid #444; 
+            display: flex; 
+            flex-direction: column; 
+            backdrop-filter: blur(10px); 
+            position: relative;
+        }
+        #stats-panel { 
+            background: #2c3e50; 
+            padding: 10px; 
+            font-size: 11px; 
+            border-bottom: 1px solid #555; 
+            color: #ecf0f1; 
+            min-height: 80px; 
+        }
+        #shop { 
+            flex-grow: 1; 
+            display: flex; 
+            flex-direction: column; 
+            overflow-y: auto; 
+            align-items: center; 
+            gap: 10px; 
+            padding: 15px 0; 
+        }
+        .shop-item { 
+            width: 85px; 
+            min-height: 85px; 
+            background: #333; 
+            border: 2px solid #555; 
+            border-radius: 8px; 
+            cursor: grab; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 11px; 
+            flex-shrink: 0; 
+            transition: all 0.2s; 
+            touch-action: none;
+        }
+        .shop-item:active { cursor: grabbing; }
+        .shop-item.selected { border-color: #f1c40f; background: #444; }
+        
+        #wave-btn { position: absolute; top: 10px; right: 130px; padding: 12px 20px; background: #27ae60; border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 0 10px rgba(39, 174, 96, 0.4); z-index: 10; }
+        #wave-btn:hover { background: #2ecc71; }
+        #wave-btn:disabled { background: #555; opacity: 0.6; box-shadow: none; }
+        .tower-icon { width: 24px; height: 24px; border-radius: 3px; margin-bottom: 4px; box-shadow: 0 0 8px currentColor; pointer-events: none; }
+        
+        .sell-btn {
+            margin-top: 8px;
+            padding: 5px 10px;
+            background: #e74c3c;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+        }
+        .sell-btn:hover { background: #ff5e4d; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-top">
+        <div class="stat-box">💰 $<span id="money">300</span></div>
+        <div class="stat-box">❤️ <span id="lives">20</span></div>
+        <div class="stat-box">🌊 Wave: <span id="wave">0</span></div>
+    </div>
+
+    <button id="wave-btn">START WAVE</button>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="shop-container">
+        <div id="stats-panel">Drag a tower to deploy</div>
+        <div id="shop">
+            <div class="shop-item" data-type="basic"><div class="tower-icon" style="background: #3498db; color: #3498db;"></div><span>Basic</span><span>$50</span></div>
+            <div class="shop-item" data-type="fast"><div class="tower-icon" style="background: #f1c40f; color: #f1c40f;"></div><span>Fast</span><span>$75</span></div>
+            <div class="shop-item" data-type="sniper"><div class="tower-icon" style="background: #e74c3c; color: #e74c3c;"></div><span>Sniper</span><span>$150</span></div>
+            <div class="shop-item" data-type="poison"><div class="tower-icon" style="background: #a29bfe; color: #a29bfe;"></div><span>Poison</span><span>$100</span></div>
+            <div class="shop-item" data-type="heavy"><div class="tower-icon" style="background: #d35400; color: #d35400;"></div><span>Heavy</span><span>$200</span></div>
+            <div class="shop-item" data-type="laser"><div class="tower-icon" style="background: #1abc9c; color: #1abc9c;"></div><span>Laser</span><span>$250</span></div>
+            <div class="shop-item" data-type="frost"><div class="tower-icon" style="background: #74b9ff; color: #74b9ff;"></div><span>Frost</span><span>$125</span></div>
+            <div class="shop-item" data-type="gold"><div class="tower-icon" style="background: #feca57; color: #feca57;"></div><span>Midas</span><span>$300</span></div>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const statsPanel = document.getElementById('stats-panel');
+
+let money = 300, lives = 20, wave = 0, enemies = [], towers = [], projectiles = [], particles = [], isWaveActive = false;
+let draggingType = null;
+let selectedTower = null;
+let mousePos = { x: 0, y: 0 };
+let gridOffset = 0;
+let shake = 0; 
+
+const TOWER_TYPES = {
+    basic:  { color: '#3498db', range: 130, cd: 40, dmg: 15, cost: 50, desc: "Reliable all-rounder." },
+    fast:   { color: '#f1c40f', range: 100, cd: 10, dmg: 5,  cost: 75, desc: "High fire rate." },
+    sniper: { color: '#e74c3c', range: 350, cd: 110, dmg: 90, cost: 150, desc: "Extreme range." },
+    poison: { color: '#a29bfe', range: 120, cd: 50, dmg: 6,  cost: 100, effect: 'poison', desc: "DOT damage." },
+    heavy:  { color: '#d35400', range: 160, cd: 80, dmg: 120, cost: 200, desc: "Hard hitter." },
+    laser:  { color: '#1abc9c', range: 180, cd: 4,  dmg: 2, cost: 250, desc: "Continuous beam." },
+    frost:  { color: '#74b9ff', range: 110, cd: 45, dmg: 3,  cost: 125, effect: 'slow', desc: "Slows enemies." },
+    gold:   { color: '#feca57', range: 100, cd: 70, dmg: 12, cost: 300, effect: 'gold', desc: "+$40 bonus." }
+};
+
+canvas.width = window.innerWidth - 120;
+canvas.height = window.innerHeight;
+
+const path = [
+    {x: -50, y: canvas.height * 0.5},
+    {x: canvas.width * 0.2, y: canvas.height * 0.5},
+    {x: canvas.width * 0.2, y: canvas.height * 0.2},
+    {x: canvas.width * 0.8, y: canvas.height * 0.2},
+    {x: canvas.width * 0.8, y: canvas.height * 0.8},
+    {x: canvas.width + 50, y: canvas.height * 0.8}
+];
+
+function triggerShake(intensity) { shake = Math.max(shake, intensity); }
+
+class Particle {
+    constructor(x, y, color, vx, vy) {
+        this.x = x; this.y = y;
+        this.vx = vx + (Math.random() - 0.5) * 2;
+        this.vy = vy + (Math.random() - 0.5) * 2;
+        this.life = 1.0; this.color = color;
+        this.size = Math.random() * 2 + 1; // Slightly smaller particles
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy;
+        this.life -= 0.04; this.vx *= 0.95; this.vy *= 0.95;
+    }
+    draw() {
+        ctx.save(); ctx.globalAlpha = this.life; ctx.shadowBlur = 4; ctx.shadowColor = this.color;
+        ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.size, this.size); ctx.restore();
+    }
+}
+
+class Enemy {
+    constructor(hp, isBoss = false) {
+        this.x = path[0].x; this.y = path[0].y;
+        this.hp = hp; this.maxHp = hp; this.isBoss = isBoss;
+        this.speed = isBoss ? 0.8 + (wave * 0.02) : 1.2 + (wave * 0.03); 
+        this.pathIndex = 0; this.slowed = 0; this.poisoned = 0; this.radius = isBoss ? 26 : 14;
+    }
+    update() {
+        if (this.poisoned > 0) { this.hp -= 0.15; this.poisoned--; }
+        let s = this.slowed > 0 ? this.speed * 0.5 : this.speed;
+        if (this.slowed > 0) this.slowed--;
+        let target = path[this.pathIndex + 1];
+        let dx = target.x - this.x, dy = target.y - this.y, d = Math.hypot(dx, dy);
+        if (d < 5) {
+            this.pathIndex++;
+            if (this.pathIndex >= path.length - 1) { lives -= this.isBoss ? 10 : 1; this.hp = 0; triggerShake(30); return; }
+        }
+        this.x += (dx/d) * s; this.y += (dy/d) * s;
+    }
+    draw() {
+        ctx.save(); ctx.shadowBlur = this.isBoss ? 20 : 10;
+        ctx.shadowColor = this.isBoss ? "#e74c3c" : (this.slowed > 0 ? "#74b9ff" : "#2ecc71");
+        ctx.fillStyle = this.isBoss ? "#8e44ad" : (this.slowed > 0 ? "#74b9ff" : (this.poisoned > 0 ? "#a29bfe" : "#2ecc71"));
+        let r = this.isBoss ? this.radius * (1 + Math.sin(Date.now()*0.005)*0.1) : this.radius;
+        ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI*2); ctx.fill(); ctx.restore();
+        if (this.hp < this.maxHp) {
+            ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(this.x - 20, this.y - 25, 40, 5);
+            ctx.fillStyle = "#2ecc71"; ctx.fillRect(this.x - 20, this.y - 25, (this.hp/this.maxHp)*40, 5);
+        }
+    }
+}
+
+class Tower {
+    constructor(x, y, type) { 
+        Object.assign(this, TOWER_TYPES[type]); 
+        this.type = type;
+        this.x = x; this.y = y; this.cooldown = 0; this.flash = 0; this.scale = 1.0; 
+    }
+    update() {
+        this.scale += (1.0 - this.scale) * 0.2;
+        if (this.flash > 0) this.flash--; 
+        if (this.cooldown > 0) this.cooldown--;
+        if (this.cooldown <= 0) {
+            let target = enemies.find(e => Math.hypot(e.x - this.x, e.y - this.y) < this.range);
+            if (target) {
+                if (this.effect === 'slow') target.slowed = 60;
+                if (this.effect === 'poison') target.poisoned = 200;
+                projectiles.push({ x: this.x, y: this.y, target, dmg: this.dmg, color: this.color, speed: 10, effect: this.effect });
+                this.cooldown = this.cd; this.flash = 5; this.scale = 0.7; 
+            }
+        }
+    }
+    draw() {
+        ctx.save(); ctx.translate(this.x, this.y); ctx.scale(this.scale, this.scale);
+        ctx.shadowBlur = this.flash > 0 ? 30 : 15; ctx.shadowColor = this.color;
+        
+        if (selectedTower === this) {
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(-18, -18, 36, 36);
+        }
+
+        ctx.fillStyle = this.flash > 0 ? "white" : this.color; 
+        ctx.beginPath(); ctx.roundRect(-16, -16, 32, 32, 4); ctx.fill(); ctx.restore();
+    }
+}
+
+function sellTower() {
+    if (selectedTower) {
+        money += Math.floor(selectedTower.cost * 0.5);
+        towers = towers.filter(t => t !== selectedTower);
+        selectedTower = null;
+        statsPanel.innerHTML = "Tower sold!";
+        triggerShake(10);
+    }
+}
+
+function update() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0); 
+    ctx.fillStyle = "#0a0a0c"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (shake > 0) {
+        ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+        shake *= 0.92;
+        if (shake < 0.1) shake = 0;
+    }
+
+    ctx.lineWidth = 2; 
+    ctx.strokeStyle = "rgba(0, 255, 204, 0.05)"; gridOffset = (gridOffset + 0.5) % 40;
+    for (let x = gridOffset; x < canvas.width; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+    for (let y = gridOffset; y < canvas.height; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; ctx.lineWidth = 60; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y); path.forEach(p => ctx.lineTo(p.x, p.y)); ctx.stroke();
+
+    if (selectedTower) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255,255,255,0.3)";
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath(); ctx.arc(selectedTower.x, selectedTower.y, selectedTower.range, 0, Math.PI*2); ctx.stroke();
+        ctx.restore();
+    }
+
+    if (draggingType) {
+        const t = TOWER_TYPES[draggingType];
+        ctx.setTransform(1, 0, 0, 1, 0, 0); 
+        ctx.beginPath(); ctx.lineWidth = 65; 
+        ctx.moveTo(path[0].x, path[0].y); path.forEach(p => ctx.lineTo(p.x, p.y));
+        const isOnPath = ctx.isPointInStroke(mousePos.x, mousePos.y);
+        const isOverlapping = towers.some(tower => Math.hypot(tower.x - mousePos.x, tower.y - mousePos.y) < 40);
+        const canAfford = money >= t.cost;
+        const isValid = !isOnPath && !isOverlapping && canAfford && mousePos.x < canvas.width;
+
+        ctx.save();
+        ctx.lineWidth = 2; 
+        ctx.fillStyle = isValid ? "rgba(255,255,255,0.1)" : "rgba(255,0,0,0.2)";
+        ctx.strokeStyle = isValid ? "#fff" : "#f00";
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath(); ctx.arc(mousePos.x, mousePos.y, t.range, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.setLineDash([]);
+        
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = isValid ? t.color : "#ff4444";
+        ctx.beginPath(); ctx.roundRect(mousePos.x - 16, mousePos.y - 16, 32, 32, 4); ctx.fill();
+        ctx.restore();
+    }
+
+    towers.forEach(t => { t.update(); t.draw(); });
+    enemies.forEach(e => { if (e.hp > 0) { e.update(); e.draw(); } });
+
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    projectiles.forEach((p, i) => {
+        let dx = p.target.x - p.x, dy = p.target.y - p.y, d = Math.hypot(dx, dy);
+        if (d < 12 || p.target.hp <= 0) {
+            if (p.target.hp > 0) {
+                p.target.hp -= p.dmg;
+                if (p.target.hp <= 0) {
+                    money += p.target.isBoss ? 500 : (p.effect === 'gold' ? 60 : 20);
+                    triggerShake(p.target.isBoss ? 80 : 15);
+                } else {
+                    triggerShake(p.dmg > 50 ? 8 : 2);
+                }
+                
+                let impactAngle = Math.atan2(dy, dx) + Math.PI;
+                // --- REDUCED PARTICLES HERE (Only 4) ---
+                for(let k=0; k<4; k++) { 
+                    let force = Math.random() * 4 + 2;
+                    particles.push(new Particle(p.x, p.y, p.color, Math.cos(impactAngle)*force, Math.sin(impactAngle)*force));
+                }
+            }
+            projectiles.splice(i, 1);
+        } else {
+            p.x += (dx/d)*p.speed; p.y += (dy/d)*p.speed;
+            ctx.shadowBlur = 10; ctx.shadowColor = p.color; ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
+        }
+    });
+
+    enemies = enemies.filter(e => e.hp > 0);
+    particles = particles.filter(p => p.life > 0);
+    particles.forEach(p => { p.update(); p.draw(); });
+    ctx.restore();
+
+    document.getElementById('money').innerText = Math.floor(money);
+    document.getElementById('lives').innerText = lives;
+    document.getElementById('wave').innerText = wave;
+    if (lives <= 0) { alert("Game Over!"); location.reload(); }
+    if (isWaveActive && enemies.length === 0) { isWaveActive = false; document.getElementById('wave-btn').disabled = false; }
+    requestAnimationFrame(update);
+}
+
+const handleMove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const cx = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+    const cy = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+    mousePos.x = cx - rect.left; mousePos.y = cy - rect.top;
+};
+
+document.querySelectorAll('.shop-item').forEach(item => {
+    item.addEventListener('pointerdown', (e) => {
+        draggingType = item.dataset.type;
+        selectedTower = null; 
+        const t = TOWER_TYPES[draggingType];
+        statsPanel.innerHTML = `<strong>${draggingType.toUpperCase()}</strong><br>Dmg: ${t.dmg}<br>Rng: ${t.range}<br>${t.desc}`;
+        item.classList.add('selected');
+    });
+});
+
+canvas.addEventListener('pointerdown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const clicked = towers.find(t => Math.hypot(t.x - x, t.y - y) < 20);
+    if (clicked) {
+        selectedTower = clicked;
+        const refund = Math.floor(clicked.cost * 0.5);
+        statsPanel.innerHTML = `
+            <strong>${clicked.type.toUpperCase()}</strong><br>
+            Refund: $${refund}<br>
+            <button class="sell-btn" onclick="sellTower()">SELL TOWER</button>
+        `;
+    } else {
+        selectedTower = null;
+        statsPanel.innerHTML = "Drag a tower to deploy";
+    }
+});
+
+window.addEventListener('pointermove', handleMove);
+window.addEventListener('pointerup', () => {
+    if (draggingType) {
+        const cost = TOWER_TYPES[draggingType].cost;
+        ctx.setTransform(1, 0, 0, 1, 0, 0); 
+        ctx.beginPath(); ctx.lineWidth = 65; ctx.moveTo(path[0].x, path[0].y); path.forEach(p => ctx.lineTo(p.x, p.y));
+        const isOnPath = ctx.isPointInStroke(mousePos.x, mousePos.y);
+        const isOverlapping = towers.some(t => Math.hypot(t.x - mousePos.x, t.y - mousePos.y) * 0.9 < 40);
+
+        if (mousePos.x < canvas.width && !isOnPath && !isOverlapping && money >= cost) {
+            towers.push(new Tower(mousePos.x, mousePos.y, draggingType));
+            money -= cost;
+        } else if (isOverlapping || isOnPath) {
+            triggerShake(5);
+        }
+    }
+    draggingType = null;
+    document.querySelectorAll('.shop-item').forEach(i => i.classList.remove('selected'));
+});
+
+document.getElementById('wave-btn').onclick = () => {
+    wave++; isWaveActive = true; document.getElementById('wave-btn').disabled = true;
+    if (wave % 10 === 0) {
+        setTimeout(() => enemies.push(new Enemy((40 + (wave * 12)) * 12, true)), 500);
+    } else {
+        let count = 6 + Math.floor(wave * 1.1);
+        let interval = setInterval(() => {
+            enemies.push(new Enemy(40 + (wave * 10)));
+            if (--count <= 0) clearInterval(interval);
+        }, 900);
+    }
+};
+
+update();
+</script>
+</body>
+</html>
+
