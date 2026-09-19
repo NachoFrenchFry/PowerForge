@@ -1,0 +1,931 @@
+/* ==========================================================================
+   Power Forge — style.css
+   Dark industrial forge aesthetic: charcoal glass panels, ember accents,
+   crisp uppercase type. All UI is DOM; the world itself is canvas.
+   ========================================================================== */
+
+/* The game's own pixel-art typeface, matching the rest of the hand-drawn UI
+   texture work. Every DOM element inherits it through --font below; the two
+   places text is drawn directly on the game canvas (combat.js's damage
+   numbers, world.js's area label) reference it by this same family name. */
+@font-face {
+  font-family: 'PowerForge';
+  src: url('textures/ui/font.ttf') format('truetype');
+  font-display: swap;
+}
+
+:root {
+  --bg: #07090f;
+  --panel: rgba(18, 22, 33, 0.92);
+  --panel-2: rgba(26, 31, 45, 0.9);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --ink: #e8edf7;
+  --ink-dim: #97a2b8;
+  --ink-faint: #5e6a80;
+  --ember: #ff8a3d;
+  --ember-2: #ffc46b;
+  --good: #7fe4a0;
+  --bad: #ff6b7d;
+  --exp: #ffcb5c;
+  --accent: var(--ember);
+  --radius: 14px;
+  --font: "PowerForge", "Trebuchet MS", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: #04050a;
+  color: var(--ink);
+  font-family: var(--font);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 700px at 50% 120%, rgba(255, 120, 40, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 50% -10%, rgba(60, 120, 255, 0.07), transparent 60%),
+    #04050a;
+}
+
+/* ---------- the scaled design surface ----------
+   #frame's width/height are set in JS (game.resize()) to U.GW/U.GH, which
+   are recomputed every resize to whatever exactly fills the window at
+   --scale — so after the transform, the frame always exactly covers the
+   viewport with no bars and no cropping. Author HUD/menu positions in
+   logical px relative to the frame's own box (not vw/vh); they'll scale
+   automatically and the frame's box always matches the window's aspect
+   ratio, so corner anchors stay put instead of drifting off-screen. */
+#frame {
+  position: relative;
+  flex: 0 0 auto;
+  transform: scale(var(--scale, 1));
+  transform-origin: center center;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 30px 90px rgba(0, 0, 0, 0.75);
+}
+
+canvas#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #05060c;
+  /* Swap to `pixelated` once the canvas renders at a low internal resolution
+     for hand-drawn pixel art. */
+  image-rendering: auto;
+}
+
+.hidden { display: none !important; }
+
+/* ---------- buttons ---------- */
+.btn {
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 12px 26px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 170, 90, 0.55);
+  box-shadow: 0 8px 26px rgba(255, 130, 50, 0.18);
+}
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:disabled { opacity: .38; cursor: not-allowed; }
+
+.btn-primary {
+  background: linear-gradient(180deg, #ff9c4d, #e0561f);
+  border-color: rgba(255, 200, 140, 0.5);
+  color: #1b0d05;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.btn-primary:hover:not(:disabled) { box-shadow: 0 10px 34px rgba(255, 120, 40, 0.4); }
+.btn-ghost { background: rgba(255, 255, 255, 0.04); }
+.btn-xl { font-size: 20px; padding: 18px 68px; letter-spacing: 0.28em; border-radius: 12px; }
+
+/* ---------- 9-slice pixel-art card buttons ----------
+   textures/ui/card.png is an 11x11-after-cleanup 9-slice asset: 5x5 corners
+   (fixed size, chamfered art), 1x5/5x1 edge strips at the middle row/column
+   (tiled to fill length/height), and a 1x1 centre pixel (tiled to fill the
+   interior) — border-image is a built-in match for exactly this layout, so
+   no canvas slicing code is needed. The source card.png has 1px transparent
+   gap rows/cols between the 3x3 conceptual pieces (spacing for editing, not
+   meant to be sliced) — textures/ui/card_9slice.png is that source with the
+   gaps stripped, and every card_<name>.png below is a recolor of THAT clean
+   base (white -> the named color, the #787878 shadow -> that color scaled
+   by the same 0x78/0xff ratio the artist's own shadow uses, black outline
+   untouched). border-image-repeat is `stretch`, NOT `repeat`/`round`: the
+   edge slices are literally 1px along the axis they extend down, and a 1px
+   strip of uniform color stretched to any length is pixel-identical to
+   tiling it — except stretching draws ONE region, so there are no tile
+   boundaries left for the rasterizer to round apart into hairline gaps.
+   `round` still tiled (just with adjusted counts), which is why a faint
+   seam survived it.
+
+   border-image-slice is just `5`, NOT `5 fill`: `fill` renders the image's
+   own centre pixel as a NINTH stretched region, independent from the 4
+   corners and 4 edges around it — and at the fractional device scale this
+   game runs at (the outer #frame transform is essentially never an
+   integer), that centre region's own independently-rounded rectangle lands
+   a hair apart from the edge strips surrounding it, leaving a faint
+   rectangular seam right at the frame/interior boundary on every side.
+   Dropping `fill` makes border-image paint ONLY the 8 frame pieces, with
+   nothing of its own in the interior to seam against.
+
+   The interior fill instead comes from a plain CSS `background` per
+   card-btn-<name> below — one flat colour sampled directly from that
+   texture's own centre pixel, so it's an exact match, just painted through
+   a different (seam-free, single-rect) system than the frame around it.
+   This is NOT the same setup that used to cause a seam here: that was
+   `fill` and `background` BOTH trying to paint the interior at once, two
+   independently-rounded rects of the same colour landing a hair apart.
+   With `fill` gone, background is the only thing painting the interior. */
+.card-btn {
+  border-style: solid;
+  border-width: 20px;
+  border-image-source: url('textures/ui/card_neutral.png');
+  border-image-slice: 5;
+  /* 1px WIDER than border-width on purpose. The background is clipped to
+     the padding box and the border-image ring ends at that same inset, so
+     the two edges are independently rounded at this game's fractional
+     device scale and can land a device pixel apart — a hairline seam of
+     whatever's behind, right around the inside of the frame. Letting the
+     image overhang 1px into the padding box makes the two overlap instead
+     of merely touching. It's invisible because the edge slice's innermost
+     pixel IS the fill colour (verified against every card_*.png: e.g.
+     ember's is #ff8a3d, exactly its background-color below). */
+  border-image-width: 21px;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  background: #5b6478;
+  /* Without this, `background` (border-box by default) fills all the way
+     under the corner art's own transparent chamfer pixels, so a solid
+     square pokes out past the diagonal cut instead of leaving it open to
+     whatever's actually behind the button. padding-box keeps the fill
+     inside the border entirely, matching the corner exactly as drawn. */
+  background-clip: padding-box;
+  border-radius: 0;
+  box-shadow: none;
+}
+.card-btn:hover:not(:disabled) { box-shadow: none; }
+
+/* background-COLOR, not the `background` shorthand: the shorthand resets
+   every background sub-property it doesn't mention — including
+   background-clip — back to its initial value (border-box), which would
+   silently undo .card-btn's background-clip: padding-box above for every
+   element that also carries one of these classes (i.e. every actual
+   button). The longhand only ever touches the color. */
+.card-btn-ember     { border-image-source: url('textures/ui/card_ember.png');     background-color: #ff8a3d; }
+.card-btn-neutral   { border-image-source: url('textures/ui/card_neutral.png');   background-color: #5b6478; }
+.card-btn-wind      { border-image-source: url('textures/ui/card_wind.png');      background-color: #a8ecff; }
+.card-btn-water     { border-image-source: url('textures/ui/card_water.png');     background-color: #4ca8ff; }
+.card-btn-fire      { border-image-source: url('textures/ui/card_fire.png');      background-color: #ff7e2a; }
+.card-btn-sand      { border-image-source: url('textures/ui/card_sand.png');      background-color: #e2ba6a; }
+.card-btn-lightning { border-image-source: url('textures/ui/card_lightning.png'); background-color: #ffec60; }
+.card-btn-rain      { border-image-source: url('textures/ui/card_rain.png');      background-color: #80c4ff; }
+.card-btn-good      { border-image-source: url('textures/ui/card_good.png');      background-color: #7fe4a0; }
+.card-btn-bad       { border-image-source: url('textures/ui/card_bad.png');       background-color: #ff6b7d; }
+
+.btn-sm.card-btn { border-width: 12px; border-image-width: 13px; }
+
+.btn-sm { font-size: 11px; padding: 8px 14px; letter-spacing: 0.1em; }
+
+.icon-btn {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-dim);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+.icon-btn:hover { color: #fff; border-color: var(--line-2); }
+
+/* ---------- full screens ---------- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  background:
+    radial-gradient(1000px 620px at 50% 40%, rgba(40, 24, 60, 0.55), transparent 70%),
+    linear-gradient(180deg, #06070e 0%, #0d0a14 45%, #180d10 100%);
+}
+
+.title-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(600px 320px at 50% 78%, rgba(255, 110, 40, 0.30), transparent 70%),
+    radial-gradient(700px 400px at 20% 20%, rgba(70, 130, 255, 0.13), transparent 70%),
+    radial-gradient(700px 400px at 82% 25%, rgba(255, 60, 120, 0.10), transparent 70%);
+  animation: breathe 7s ease-in-out infinite;
+}
+@keyframes breathe { 0%, 100% { opacity: .75; } 50% { opacity: 1; } }
+
+.title-inner { position: relative; text-align: center; z-index: 2; }
+.title-kicker {
+  font-size: 12px; letter-spacing: 0.62em; color: var(--ember-2);
+  opacity: .8; margin-bottom: 18px;
+}
+.game-title {
+  font-size: 92px;
+  line-height: .95;
+  letter-spacing: 0.06em;
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+.game-title span { display: block; color: #f2f5ff; text-shadow: 0 0 34px rgba(160, 200, 255, 0.35); }
+.game-title em {
+  display: block;
+  font-style: normal;
+  background: linear-gradient(180deg, #ffd88a 0%, #ff7a2f 60%, #d63a2a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 6px 24px rgba(255, 110, 40, 0.45));
+}
+.title-sub { color: var(--ink-dim); letter-spacing: 0.18em; font-size: 13px; margin: 14px 0 34px; }
+.title-controls {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 10px 28px;
+  justify-content: center;
+  margin-top: 38px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+.title-controls b, .hud-hint b {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 6px;
+  margin-right: 4px;
+  border-radius: 5px;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  font-size: 11px;
+  text-align: center;
+}
+.title-foot { margin-top: 30px; font-size: 11px; color: #39415a; letter-spacing: .2em; }
+
+/* ---------- power select ---------- */
+.select-head { text-align: center; margin-bottom: 22px; }
+.select-head h2 { font-size: 30px; letter-spacing: .3em; font-weight: 900; }
+.select-head p { color: var(--ink-faint); font-size: 12px; letter-spacing: .16em; margin-top: 8px; }
+
+.power-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 152px);
+  gap: 12px;
+}
+.power-card {
+  position: relative;
+  padding: 16px 12px 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform .14s ease, box-shadow .2s ease;
+  overflow: hidden;
+  /* Border/background come from the 9-slice card-btn-<power> class instead
+     of a plain CSS border — see the card-btn block above. Scaled down from
+     the default 20px since these cards are only 152px wide. */
+  border-width: 10px;
+  border-image-width: 11px;
+  /* Unlike every other card-btn, these stay hollow on purpose: six of them
+     sit side by side and a solid fill on each turns the row into a wall of
+     flat color, drowning out the icon/name — the frame alone is enough to
+     read as a card, with the game's own dark backdrop showing through. */
+  border-image-slice: 5;
+  background: none;
+}
+.power-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -30% -60% -30%;
+  height: 120px;
+  background: radial-gradient(closest-side, var(--pc, #fff), transparent);
+  opacity: .16;
+  pointer-events: none;
+}
+.power-card:hover { transform: translateY(-4px); border-color: var(--pc); }
+.power-card.selected {
+  border-color: var(--pc);
+  box-shadow: 0 0 0 1px var(--pc), 0 12px 40px rgba(0, 0, 0, .5);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
+}
+.pc-icon {
+  font-size: 34px; line-height: 1; color: var(--pc);
+  text-shadow: 0 0 22px var(--pc);
+}
+.pc-name { margin-top: 10px; font-weight: 900; letter-spacing: .18em; font-size: 14px; }
+.pc-tag { margin-top: 6px; font-size: 10px; color: var(--ink-faint); letter-spacing: .06em; min-height: 26px; }
+
+.select-detail {
+  margin-top: 20px;
+  width: 960px;
+  min-height: 138px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 18px 22px;
+}
+.sd-empty { color: var(--ink-faint); font-size: 13px; letter-spacing: .12em; text-align: center; padding-top: 44px; }
+.sd-grid { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 24px; }
+.sd-title { font-size: 22px; font-weight: 900; letter-spacing: .2em; }
+.sd-blurb { color: var(--ink-dim); font-size: 12.5px; line-height: 1.55; margin-top: 10px; }
+.sd-h { font-size: 10px; letter-spacing: .28em; color: var(--ink-faint); margin-bottom: 10px; }
+.stat-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: 11.5px; }
+.stat-row .sn { width: 74px; color: var(--ink-dim); letter-spacing: .08em; }
+.stat-row .sv { width: 42px; text-align: right; color: var(--ink); font-weight: 700; }
+.meter { flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.meter i { display: block; height: 100%; border-radius: 3px; background: var(--pc, var(--ember)); }
+.ab-row { display: flex; gap: 9px; align-items: baseline; font-size: 11.5px; margin-bottom: 8px; color: var(--ink-dim); }
+.ab-row .lv { color: var(--ink-faint); font-size: 10px; letter-spacing: .1em; min-width: 42px; }
+.ab-row .nm { color: var(--ink); font-weight: 700; }
+
+.select-actions { margin-top: 22px; display: flex; gap: 14px; }
+
+/* ---------- HUD ---------- */
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  font-size: 12px;
+}
+/* Framed with the same 9-slice card-btn texture as the ABILITIES button
+   below it (card-btn-neutral in the markup, retinted to the run's power by
+   ui.js's setPowerTheme) — border/border-radius come from that class
+   instead of the plain CSS ones this used to have; border-radius has to
+   stay at 0 (see the card-btn comment) since the pixel art's own corners
+   supply the rounding, and a nonzero radius here would just clip a
+   rounded hole through square corner art. */
+.hud-panel {
+  position: absolute;
+  top: 16px; left: 16px;
+  width: 262px;
+  padding: 10px 12px 11px;
+  border-radius: 0;
+  /* fill comes from .card-btn-neutral's background — this card stays on
+     the neutral texture regardless of the run's power (see ui.js). */
+}
+.hud-panel.card-btn { border-width: 14px; border-image-width: 15px; }
+.hud-row { display: flex; align-items: center; justify-content: space-between; }
+.hud-identity { margin-bottom: 11px; }
+.power-chip { display: flex; align-items: center; gap: 9px; }
+.power-icon {
+  font-size: 19px;
+  color: var(--pc, var(--ember));
+  text-shadow: 0 0 14px var(--pc, var(--ember));
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+}
+.power-name { font-weight: 900; letter-spacing: .2em; font-size: 14px; }
+.level-chip { display: flex; align-items: baseline; gap: 7px; }
+.level-chip .k { font-size: 9px; letter-spacing: .22em; color: var(--ink-faint); }
+.level-chip .v { font-size: 20px; font-weight: 900; color: var(--ember-2); }
+
+.bar-block + .bar-block { margin-top: 9px; }
+.bar-label {
+  display: flex; justify-content: space-between;
+  font-size: 9.5px; letter-spacing: .2em; color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+.bar {
+  position: relative;
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+.fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; transition: width .16s linear; }
+.fill.exp { background: linear-gradient(90deg, #a4670f, var(--exp)); box-shadow: 0 0 12px rgba(255, 200, 90, .5); }
+
+/* ---------- ability cooldown dock ----------
+   Sits directly above the ABILITIES button and only shows slots the player
+   has actually unlocked (updateHUD sets .slot-hidden on locked ones), so it
+   starts as a single icon and grows as the run does. Wraps rather than
+   running off the side once a power has all eleven.
+
+   bottom:150px, not the ~110px it looks like the button's own position
+   would suggest: .ability-toggle-btn is a .card-btn, whose 9-slice border
+   adds 20px on every side — its true rendered height is ~76px, not the
+   ~34px its padding+font alone imply, so its top edge actually lands at
+   62+76=138px from the frame's bottom edge. 150px clears that with a little
+   room, regardless of how many rows the dock wraps to (it only grows
+   upward from this bottom anchor).
+
+   .dock-right/.panel-left etc below are the actual anchor — .ability-dock
+   itself carries no side offset any more, since the SAME toggle-btn/panel
+   look is now shared with the SHOP button on the opposite corner (see
+   .dock-left/.panel-left). The row also switches flex-direction so it
+   still wraps outward from the button (away from screen centre) rather
+   than growing back over it. */
+.ability-dock {
+  position: absolute;
+  bottom: 150px;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: 6px;
+  max-width: 340px;
+}
+.dock-right { right: 16px; }
+.dock-left { left: 16px; }
+/* Only the cooldown row itself needs to wrap outward from its own button
+   (away from screen centre) instead of growing back over it — the toggle
+   buttons share these same position classes but are single-line, so
+   reversing THEIR internal icon/text order would be wrong. */
+.ability-dock.dock-right { flex-direction: row-reverse; }
+.ab-slot.slot-hidden { display: none; }
+.ability-toggle-btn {
+  position: absolute;
+  bottom: 62px;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 10px 16px;
+}
+.atb-icon { color: var(--accent, var(--ember)); text-shadow: 0 0 8px var(--accent, var(--ember)); font-size: 14px; }
+.atb-key {
+  margin-left: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  background: rgba(0, 0, 0, .35);
+  font-size: 9px;
+  letter-spacing: .06em;
+}
+/* Same 9-slice card-btn texture as the rest of the HUD (class added in
+   ui.js's buildAbilityBar, tinted to the current power); border-radius has
+   to be 0 here too, same reasoning as .hud-panel above. 8px is the smallest
+   border-width used anywhere in the game — the slot itself is only 42px, so
+   anything wider would swallow the icon. */
+.ab-slot {
+  position: relative;
+  width: 42px; height: 42px;
+  border-radius: 0;
+  overflow: hidden;
+  transition: border-color .15s ease, transform .12s ease, box-shadow .18s ease;
+}
+.ab-slot.card-btn { border-width: 8px; border-image-width: 9px; }
+.ab-slot.locked { opacity: .34; }
+/* border-color has no visible effect once border-image is active (it fully
+   replaces border rendering) — these are left in place as the fallback for
+   the rare case the texture fails to load, but the glow is carried by
+   box-shadow now, which does still layer over the 9-slice art fine. */
+.ab-slot.ready {
+  border-color: rgba(255, 180, 100, .55);
+  box-shadow: 0 0 12px rgba(255, 150, 60, .18);
+}
+.ab-slot.active {
+  border-color: var(--pc, var(--ember));
+  box-shadow: 0 0 16px var(--pc, var(--ember));
+}
+.ab-slot.flash { animation: abflash .45s ease; }
+@keyframes abflash {
+  0% { transform: scale(1.16); box-shadow: 0 0 26px rgba(255, 180, 90, .65); }
+  100% { transform: scale(1); }
+}
+/* Big element glyph, centred. */
+.ab-slot .ab-ico {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-size: 21px;
+  color: var(--pc, var(--ember));
+  text-shadow: 0 0 10px var(--pc, var(--ember));
+}
+/* Key badge, tucked into the corner. */
+.ab-slot .ab-key {
+  position: absolute; top: 2px; left: 3px;
+  font-size: 8.5px; font-weight: 900; letter-spacing: .04em;
+  color: var(--ink-dim);
+  background: rgba(0, 0, 0, .45);
+  border-radius: 4px;
+  padding: 1px 3px;
+  z-index: 3;
+}
+/* Dark curtain that drains away as the cooldown finishes. */
+.ab-slot .ab-cool {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 0;
+  background: rgba(4, 6, 12, .78);
+  z-index: 2;
+  pointer-events: none;
+}
+.ab-slot .ab-cd {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+  font-variant-numeric: tabular-nums;
+  z-index: 4;
+}
+.ab-slot.locked .ab-cd { font-size: 9px; color: var(--ink-dim); }
+
+/* The one-slot meat inventory — same .ab-slot box (42px, card-btn frame,
+   centred icon, corner badge) as the ability dock, just standing alone in
+   its own top-right spot instead of the dock's flex row, mirroring
+   .hud-panel's top-left placement. Hidden via the `hidden` class (see
+   index.html) whenever the player has never picked anything up, so an
+   empty slot doesn't sit there nagging from the very first frame. */
+.inventory-slot {
+  position: absolute;
+  top: 16px; right: 16px;
+}
+/* The source art is 14x13, not square — width/height set a bounding box
+   and object-fit keeps its own proportions inside it instead of stretching
+   it to fill a forced square, same lesson as items.js's canvas draw. */
+.inventory-slot .ab-ico img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.inventory-slot .ab-key {
+  top: auto; left: auto; bottom: 2px; right: 3px;
+  font-size: 10px;
+}
+
+/* ---------- expanded ability reference (TAB) / shop panel ----------
+   Same floating card for both — the ability reference and the shop are
+   each opened from their own corner button (see .dock-right/.dock-left)
+   and share this look, just anchored to opposite corners. */
+.panel-right { right: 16px; }
+.panel-left { left: 16px; }
+.ability-panel {
+  position: absolute;
+  bottom: 120px;
+  width: 330px;
+  max-height: 500px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 6px 6px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: #0a0d14;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .6);
+  animation: apin .14s ease;
+  pointer-events: auto;
+}
+.ability-panel .ap-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.ability-panel .ap-list::-webkit-scrollbar { width: 6px; }
+.ability-panel .ap-list::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 3px;
+}
+@keyframes apin { from { opacity: 0; transform: translateY(8px); } }
+.ap-head {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 9.5px; letter-spacing: .3em; color: var(--ink-faint);
+  padding-bottom: 8px; margin-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+}
+.ap-key {
+  letter-spacing: .1em;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, .06);
+  color: var(--ink);
+}
+.ap-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 11px; }
+.ap-row.locked { opacity: .42; }
+.ap-row .r-ico {
+  width: 26px; height: 26px; flex: 0 0 26px;
+  display: grid; place-items: center;
+  font-size: 15px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .05);
+  color: var(--pc, var(--ember));
+}
+.ap-row .r-body { flex: 1; min-width: 0; }
+.ap-row .r-top { display: flex; align-items: baseline; gap: 7px; }
+.ap-row .r-name { font-size: 11.5px; font-weight: 800; letter-spacing: .1em; }
+.ap-row .r-key {
+  font-size: 8.5px; font-weight: 900; letter-spacing: .08em;
+  color: var(--ember-2);
+  border: 1px solid rgba(255, 180, 100, .35);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.ap-row .r-key.lock { color: var(--ink-faint); border-color: var(--line); }
+.ap-row .r-desc { font-size: 10.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 3px; }
+
+.hud-hint {
+  position: absolute;
+  bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  color: var(--ink-faint);
+  background: rgba(8, 10, 16, 0.55);
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+  transition: opacity .6s ease;
+}
+/* Fades itself out once you've had a chance to read it. */
+.hud-hint.faded { opacity: 0; }
+
+/* ---------- interaction prompt ---------- */
+/* Same 9-slice card-btn frame (card_neutral.png) as the rest of the HUD
+   chrome (hud-panel, the ability dock, etc.) instead of a plain CSS box —
+   border/background/border-radius all come from that class now; only the
+   layout, text look and animation stay here. box-shadow is redeclared
+   (not just inherited) because .card-btn itself resets it to none, and
+   this rule is later in the cascade so it wins back the drop shadow. */
+.prompt {
+  position: absolute;
+  left: 50%; bottom: 92px;
+  transform: translateX(-50%);
+  z-index: 25;
+  padding: 8px 16px;
+  border-radius: 0;
+  color: #ffe6c2;
+  font-size: 12.5px;
+  letter-spacing: .14em;
+  font-weight: 700;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .55);
+  animation: promptin .18s ease;
+  pointer-events: none;
+}
+.prompt.card-btn { border-width: 12px; border-image-width: 13px; }
+.prompt b {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-right: 8px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ffcf8a, #ff9a3d);
+  color: #1b0d05;
+}
+@keyframes promptin { from { opacity: 0; transform: translate(-50%, 8px); } }
+
+/* ---------- toasts ---------- */
+#toasts {
+  position: absolute;
+  top: 84px; right: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.toast {
+  min-width: 190px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: rgba(14, 17, 26, 0.92);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+  animation: toastin .22s ease;
+}
+.toast.out { animation: toastout .3s ease forwards; }
+.toast .tt { font-size: 11px; font-weight: 900; letter-spacing: .2em; color: var(--ember-2); }
+.toast .ts { font-size: 11px; color: var(--ink-dim); margin-top: 3px; }
+@keyframes toastin { from { opacity: 0; transform: translateX(24px); } }
+@keyframes toastout { to { opacity: 0; transform: translateX(24px); } }
+
+/* ---------- level up ---------- */
+.levelup {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 35;
+  pointer-events: none;
+  background: radial-gradient(600px 400px at 50% 45%, rgba(255, 160, 60, .18), transparent 70%);
+  animation: lufade .3s ease;
+}
+@keyframes lufade { from { opacity: 0; } }
+.levelup-card {
+  position: relative;
+  padding: 30px 56px 34px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 190, 110, .45);
+  background: rgba(16, 13, 18, 0.93);
+  box-shadow: 0 0 70px rgba(255, 140, 50, .35), inset 0 0 40px rgba(255, 140, 50, .07);
+  text-align: center;
+  animation: lupop .45s cubic-bezier(.2, 1.5, .4, 1);
+  overflow: hidden;
+}
+@keyframes lupop { from { transform: scale(.7); opacity: 0; } }
+.lu-rays {
+  position: absolute; inset: -60%;
+  background: conic-gradient(from 0deg, transparent 0 8%, rgba(255, 190, 110, .1) 9%, transparent 10% 20%);
+  animation: spin 9s linear infinite;
+  pointer-events: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.lu-title {
+  position: relative;
+  font-size: 40px; font-weight: 900; letter-spacing: .3em;
+  background: linear-gradient(180deg, #fff3c8, #ff9b3d);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 4px 18px rgba(255, 140, 40, .5));
+}
+.lu-level { position: relative; margin-top: 14px; display: flex; align-items: baseline; gap: 12px; justify-content: center; }
+.lu-level .k { font-size: 11px; letter-spacing: .3em; color: var(--ink-faint); }
+.lu-level .v { font-size: 46px; font-weight: 900; color: #fff; }
+.lu-stats {
+  position: relative;
+  margin-top: 14px;
+  display: flex; gap: 20px; justify-content: center;
+  font-size: 11px; letter-spacing: .1em; color: var(--good);
+}
+.lu-ability {
+  position: relative;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.lu-ab-head { font-size: 10px; letter-spacing: .34em; color: var(--ink-faint); }
+.lu-ab-name {
+  margin-top: 9px; font-size: 26px; font-weight: 900; letter-spacing: .16em;
+  color: #9fe6ff; text-shadow: 0 0 26px rgba(110, 210, 255, .55);
+  display: flex; gap: 12px; justify-content: center; align-items: center;
+}
+.lu-ab-desc { margin-top: 8px; font-size: 12px; color: var(--ink-dim); max-width: 380px; line-height: 1.5; }
+.lu-ab-key {
+  margin: 12px auto 0;
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, .07);
+  font-size: 12px; font-weight: 900; letter-spacing: .3em;
+}
+
+/* ---------- overlays / panels ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 5, 10, 0.72);
+  backdrop-filter: blur(4px);
+  animation: lufade .16s ease;
+}
+.panel {
+  width: 620px;
+  border-radius: 18px;
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .7);
+  overflow: hidden;
+}
+.panel-wide { width: 780px; }
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-head h3 { font-size: 15px; letter-spacing: .3em; font-weight: 900; }
+.panel-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+  background: rgba(0, 0, 0, .2);
+}
+.foot-note { font-size: 11px; color: var(--ink-faint); letter-spacing: .08em; }
+
+.tabs { display: flex; gap: 4px; padding: 12px 14px 0; }
+.tab {
+  flex: 1;
+  padding: 9px 6px;
+  font-family: var(--font);
+  font-size: 10.5px; font-weight: 800; letter-spacing: .18em;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px 9px 0 0;
+  cursor: pointer;
+}
+.tab:hover { color: var(--ink); }
+.tab.active {
+  color: var(--ember-2);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--line);
+  border-bottom-color: transparent;
+}
+.tab-body { padding: 18px; min-height: 300px; max-height: 330px; overflow-y: auto; }
+
+.kv { display: grid; grid-template-columns: 150px 1fr; gap: 10px 16px; font-size: 12.5px; }
+.kv .k { color: var(--ink-faint); letter-spacing: .16em; font-size: 10.5px; padding-top: 2px; }
+.kv .v { color: var(--ink); font-weight: 700; }
+.section-h {
+  font-size: 10px; letter-spacing: .3em; color: var(--ink-faint);
+  margin: 20px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.section-h:first-child { margin-top: 0; }
+
+.ability-item {
+  display: flex; gap: 13px; align-items: flex-start;
+  padding: 11px 13px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 9px;
+}
+.ability-item.locked { opacity: .5; }
+.ability-item .ai-ico {
+  font-size: 20px; width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--pc, var(--ember));
+}
+.ability-item .ai-name { font-size: 13px; font-weight: 800; letter-spacing: .12em; }
+.ability-item .ai-desc { font-size: 11.5px; color: var(--ink-dim); margin-top: 4px; line-height: 1.5; }
+.ability-item .ai-meta { margin-left: auto; text-align: right; }
+.pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .14em;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, .05);
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+.pill.on { color: var(--good); border-color: rgba(127, 228, 160, .4); background: rgba(127, 228, 160, .08); }
+.pill.off { color: var(--ink-faint); }
+.pill.key { color: var(--ember-2); border-color: rgba(255, 180, 100, .4); }
+
+/* Meat balance, sitting in the shop panel's own head bar next to the SHOP
+   label — same spot/layout .ap-key (the "TAB" badge) uses in the ability
+   panel's head, just an icon+number instead of a key name. */
+.shop-panel-balance {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 800; color: var(--ink);
+}
+.shop-panel-balance img { width: 16px; height: 16px; object-fit: contain; image-rendering: pixelated; }
+
+/* ---------- debug ---------- */
+.debug {
+  position: absolute;
+  left: 16px; bottom: 44px;
+  z-index: 50;
+  padding: 10px 13px;
+  border-radius: 9px;
+  border: 1px solid rgba(120, 255, 170, .3);
+  background: rgba(4, 12, 8, .85);
+  color: #9fffc8;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.65;
+  white-space: pre;
+  pointer-events: none;
+}
+
+/* ---------- scrollbars ---------- */
+::-webkit-scrollbar { width: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .12); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .2); }
+

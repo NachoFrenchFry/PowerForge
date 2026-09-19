@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Power Forge</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="stage">
+  <!-- Everything — canvas, HUD, menus — lives inside #frame, whose size
+       game.resize() recomputes every resize to exactly match the window
+       (no bars, no cropping) at a scale driven by the shorter of
+       width/height, so buttons/mobs/the player physically grow or shrink
+       with the window instead of just revealing more/less world. -->
+  <div id="frame">
+    <canvas id="game" width="1280" height="720"></canvas>
+
+    <!-- ================= HUD ================= -->
+    <div id="hud" class="hidden">
+      <div class="hud-panel card-btn card-btn-neutral" id="hud-panel">
+        <div class="hud-row hud-identity">
+          <div class="power-chip" id="hud-power-chip">
+            <span class="power-icon" id="hud-power-icon">✷</span>
+            <span class="power-name" id="hud-power-name">FIRE</span>
+          </div>
+          <div class="level-chip">
+            <span class="k">LEVEL</span>
+            <span class="v" id="hud-level">1</span>
+          </div>
+        </div>
+
+        <div class="bar-block">
+          <div class="bar-label"><span>EXP</span><span id="hud-exp-text">0 / 34</span></div>
+          <div class="bar"><i class="fill exp" id="hud-exp-fill"></i></div>
+        </div>
+        <!-- HP used to live here too, but now renders in-world above the
+             player (heart + bar, js/healthbar.js) instead — see ui.js's
+             updateHUD, which no longer touches an HP bar at all. -->
+      </div>
+
+      <!-- Cooldown row: only the abilities the player has actually unlocked
+           show here (updateHUD hides locked slots), sitting directly above
+           the ABILITIES button that opens the full reference panel. Lives
+           bottom-right so it doesn't crowd the SHOP button opposite it. -->
+      <div class="ability-dock dock-right" id="hud-abilities"></div>
+
+      <button class="ability-toggle-btn dock-right card-btn card-btn-neutral" id="btn-toggle-abilities">
+        <span class="atb-icon">✦</span> ABILITIES <span class="atb-key">TAB</span>
+      </button>
+
+      <div class="ability-panel panel-right hidden" id="ability-panel">
+        <div class="ap-head">ABILITIES<span class="ap-key">TAB</span></div>
+        <div class="ap-list" id="ability-panel-list"></div>
+      </div>
+
+      <!-- The meat shop (js/shop.js) — a standalone panel on the opposite
+           corner from ABILITIES, not a tab buried in the ESC menu, since
+           it's a thing you'll want to check every time you've got meat. -->
+      <button class="ability-toggle-btn dock-left card-btn card-btn-neutral" id="btn-toggle-shop">
+        <span class="atb-icon">🥩</span> SHOP
+      </button>
+
+      <div class="ability-panel panel-left hidden" id="shop-panel">
+        <div class="ap-head">
+          SHOP
+          <span class="shop-panel-balance">
+            <img src="textures/items/meat.png" alt="">
+            <span id="shop-panel-meat">0</span>
+          </span>
+        </div>
+        <div class="ap-list" id="shop-panel-list"></div>
+      </div>
+
+      <div class="hud-hint" id="hud-hint">
+        <b>A</b><b>D</b> move · <b>SHIFT</b> run · <b>W</b> jump · <b>LMB</b> attack · <b>RMB</b> eat meat · <b>TAB</b> abilities · <b>F</b> interact · <b>ESC</b> menu
+      </div>
+
+      <!-- The one-slot meat inventory (js/items.js drops it, player.js eats
+           it). Mirrors .ab-slot's own look (same 42px card-btn box, icon +
+           corner badge) since it's the same "one framed square" idea, just
+           living in its own top-right spot instead of the ability dock. -->
+      <div class="ab-slot inventory-slot card-btn card-btn-neutral hidden" id="hud-inventory">
+        <span class="ab-ico"><img src="textures/items/meat.png" alt="" id="hud-inventory-icon"></span>
+        <span class="ab-key" id="hud-inventory-count">0</span>
+      </div>
+    </div>
+
+    <div id="prompt" class="prompt card-btn card-btn-neutral hidden"></div>
+    <div id="toasts"></div>
+
+    <!-- ================= LEVEL UP ================= -->
+    <div id="levelup" class="levelup hidden">
+      <div class="levelup-card">
+        <div class="lu-rays"></div>
+        <div class="lu-title">LEVEL UP!</div>
+        <div class="lu-level"><span class="k">POWER LEVEL</span><span class="v" id="lu-level">2</span></div>
+        <div class="lu-stats" id="lu-stats"></div>
+        <div class="lu-ability hidden" id="lu-ability">
+          <div class="lu-ab-head">NEW ABILITY UNLOCKED</div>
+          <div class="lu-ab-name"><span id="lu-ab-icon">✦</span><span id="lu-ab-title">FLYING</span></div>
+          <div class="lu-ab-desc" id="lu-ab-desc"></div>
+          <div class="lu-ab-key" id="lu-ab-key">W W</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="debug" class="debug hidden"></div>
+
+    <!-- ================= TITLE ================= -->
+    <div id="screen-title" class="screen">
+      <div class="title-bg"></div>
+      <div class="title-inner">
+        <div class="title-kicker">FORGE YOUR ELEMENT</div>
+        <h1 class="game-title"><span>POWER</span><em>FORGE</em></h1>
+        <p class="title-sub">Pick one element. Roam the yard. Hunt it down.</p>
+        <button class="btn btn-primary btn-xl card-btn card-btn-ember" id="btn-play">PLAY</button>
+        <div class="title-controls">
+          <div><b>A</b> <b>D</b> move</div>
+          <div><b>SHIFT</b> run</div>
+          <div><b>W</b> jump</div>
+          <div><b>LMB</b> attack toward cursor</div>
+          <div><b>Q</b><b>E</b><b>R</b><b>C</b><b>V</b><b>X</b> abilities</div>
+          <div><b>TAB</b> ability list</div>
+          <div><b>W W</b> fly (Wind · Fire · Lightning · Rain)</div>
+        </div>
+        <div class="title-foot">v1.0 · session progress only</div>
+      </div>
+    </div>
+
+    <!-- ================= POWER SELECT ================= -->
+    <div id="screen-select" class="screen hidden">
+      <div class="select-head">
+        <h2>CHOOSE YOUR POWER</h2>
+        <p>One element, one path. This choice locks for the run.</p>
+      </div>
+      <div class="power-grid" id="power-grid"></div>
+      <div class="select-detail" id="select-detail">
+        <div class="sd-empty">Select a power to see its stats and abilities.</div>
+      </div>
+      <div class="select-actions">
+        <button class="btn btn-ghost card-btn card-btn-neutral" id="btn-back-title">BACK</button>
+        <button class="btn btn-primary card-btn card-btn-ember" id="btn-select-power" disabled>SELECT POWER</button>
+      </div>
+    </div>
+
+    <!-- ================= PAUSE / INFO MENU ================= -->
+    <div id="overlay-menu" class="overlay hidden">
+      <div class="panel panel-wide">
+        <div class="panel-head">
+          <h3>FORGE MENU</h3>
+          <button class="icon-btn" id="btn-close-menu">✕</button>
+        </div>
+        <div class="tabs" id="menu-tabs">
+          <button class="tab active" data-tab="power">POWER</button>
+          <button class="tab" data-tab="abilities">ABILITIES</button>
+          <button class="tab" data-tab="stats">STATS</button>
+          <button class="tab" data-tab="controls">CONTROLS</button>
+        </div>
+        <div class="tab-body" id="menu-body"></div>
+        <div class="panel-foot">
+          <button class="btn btn-ghost card-btn card-btn-neutral" id="btn-toggle-sound">SOUND: ON</button>
+          <button class="btn btn-primary card-btn card-btn-ember" id="btn-resume">RESUME</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /#frame -->
+</div>
+
+<!-- Load order matters: utilities first, bootstrap last. -->
+<script src="js/utils.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/powers.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/abilities.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/particles.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/tiles.js"></script>
+<script src="js/healthbar.js"></script>
+<script src="js/world.js"></script>
+<script src="js/mobs.js"></script>
+<script src="js/items.js"></script>
+<script src="js/shop.js"></script>
+<script src="js/entity.js"></script>
+<script src="js/player.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
